@@ -6,7 +6,7 @@ compatibility_date = "2025-05-31"
 upload = { format = "modules" }
 
 [[kv_namespaces]]
-binding = "SHEET_KV_preview"
+binding = "SHEET_KV_preview_preview"
 preview_id = "10c7b10795a4419f95db5ebdfe42685f"
 
 [triggers]
