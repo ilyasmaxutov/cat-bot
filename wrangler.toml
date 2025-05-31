@@ -11,3 +11,7 @@ id      = "5a34213e6795407496b4408774fba8bf"
 
 [triggers]
 crons = ["*/5 * * * *"]
+
+wrangler secret put TELEGRAM_BOT_TOKEN
+wrangler secret put GOOGLE_SHEETS_API_KEY
+wrangler secret put GOOGLE_SHEETS_ID
