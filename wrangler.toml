@@ -12,3 +12,6 @@ preview_id = "10c7b10795a4419f95db5ebdfe42685f"
 
 [triggers]
 crons = ["*/5 * * * *"]
+
+[observability.logs]
+enabled = true
