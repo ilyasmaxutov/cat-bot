@@ -1,0 +1,13 @@
+name = "catbot"
+main = "src/worker.ts"
+compatibility_date = "2025-05-31"
+
+[build]
+upload = { format = "modules" }
+
+[[kv_namespaces]]
+binding = "SHEET_KV"
+id      = "5a34213e6795407496b4408774fba8bf"
+
+[triggers]
+crons = ["*/5 * * * *"]
