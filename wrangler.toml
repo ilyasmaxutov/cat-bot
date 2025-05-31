@@ -1,5 +1,5 @@
 name = "catbot"
-main = "src/worker.ts"
+main = "src/worker.js"
 compatibility_date = "2025-05-31"
 
 [build]
