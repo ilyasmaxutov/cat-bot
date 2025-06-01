@@ -4,6 +4,16 @@
  * Защищаемся от отсутствия binding "SHEET_KV" в scheduled.
  */
 
+/** ----- Mapping команд → триггер из таблицы ----- */
+const commandMap = {
+  '/command1': 'мяу',
+  '/command2': 'песенка',
+  '/command3': 'обнимашка',
+  '/command4': 'скучно',
+  '/command5': 'миссия',
+  '/command6': 'поговорим',
+};
+
 /** ----- Константы и RAM-кэш ----- */
 const RANGE = encodeURIComponent('Sheet1!A:C');
 const RAM_TTL = 5 * 60 * 1000;
@@ -138,77 +148,16 @@ async function handleRequest(request, event) {
     }
 
     const chatId = update.message.chat.id;
-    const textIn = (update.message.text || '').trim();
-    const key = textIn.toLowerCase();
+    const rawText = (update.message.text || '').trim().toLowerCase();
+    // Преобразуем команду через commandMap
+    let key;
+    if (rawText.startsWith('/')) {
+      key = commandMap[rawText] || rawText;
+    } else {
+      key = rawText;
+    }
 
+    // Обработка команды /reload
     if (key === '/reload') {
       if (!event.env.SHEET_KV) {
-        await sendTelegram(event.env, chatId, 'Binding "SHEET_KV" не найден. Проверьте привязку KV.');
-        return new Response(JSON.stringify({ ok: true }), {
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      try {
-        await event.env.SHEET_KV.delete('sheet-v1');
-        ramCache = null;
-        await fetchSheet(event.env);
-        await sendTelegram(event.env, chatId, 'Данные перезагружены ✅');
-      } catch (err) {
-        console.error('Error reloading sheet:', err);
-        await sendTelegram(event.env, chatId, 'Ошибка при перезагрузке таблицы 😿');
-      }
-      return new Response(JSON.stringify({ ok: true }), {
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    let map;
-    try {
-      map = await fetchSheet(event.env);
-    } catch (err) {
-      console.error('Error fetching sheet:', err);
-      await sendTelegram(event.env, chatId, 'Не удалось получить данные из таблицы 😿');
-      return new Response(JSON.stringify({ ok: true }), {
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    const answers = map.get(key);
-    if (answers && answers.length > 0) {
-      const randomAnswer = pickRandom(answers);
-      await sendTelegram(event.env, chatId, randomAnswer, update.message.message_id);
-    } else {
-      await sendTelegram(
-        event.env,
-        chatId,
-        'Не знаю такого триггера 🙀 Напишите /reload, если вы только что добавили его.'
-      );
-    }
-  } catch (err) {
-    console.error('Handler error:', err);
-  }
-
-  return new Response(JSON.stringify({ ok: true }), {
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
-
-// ----------------- Обработчик CRON (по расписанию) -----------------
-addEventListener('scheduled', (event) => {
-  event.waitUntil(handleScheduled(event));
-});
-
-/**
- * @param {{ env: any }} event 
- */
-async function handleScheduled(event) {
-  if (!event.env.SHEET_KV) {
-    console.error('Scheduled: Binding "SHEET_KV" is missing. Skip fetchSheet.');
-    return;
-  }
-  try {
-    await fetchSheet(event.env);
-  } catch (err) {
-    console.error('Scheduled refresh error:', err);
-  }
-}
+        await sendTelegram(event.env, chatId, 'Binding "SHEET_KV" не найден. Провер")] }]}
