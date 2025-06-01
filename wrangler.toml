@@ -1,14 +1,12 @@
 name = "catbot"
-main = "src/worker.js"
-compatibility_date = "2025-06-01"
+compatibility_date = "2025-05-31"
 
-[build]
-upload = { format = "modules" }
+main = "src/worker.js"
 
 [[kv_namespaces]]
-binding = "SHEET_KV"
-id = "5a34213e6795407496b4408774fba8bf"
-preview_id = "10c7b10795a4419f95db5ebdfe42685f"
+binding    = "SHEET_KV"                # имя binding
+id         = "5a34213e6795407496b4408774fba8bf"          # ID продакшн-KV, полученный без --preview
+preview_id = "10c7b10795a4419f95db5ebdfe42685f"       # ID preview-KV для wrangler dev
 
 [triggers]
 crons = ["*/5 * * * *"]
