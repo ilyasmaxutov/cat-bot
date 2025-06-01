@@ -1,36 +1,13 @@
 /**
  * worker.js — Telegram-бот для Cloudflare Workers (Service Worker синтаксис).
  * Читает триггеры из Google Sheets (колонка B) и выдаёт случайный ответ (колонка C).
- * 
- * Если вы видите ошибку `Cannot read properties of undefined (reading 'SHEET_KV')`,  
- * значит Worker не видит привязку KV с именем "SHEET_KV".  
- * Убедитесь, что binding в wrangler.toml или через Dashboard называется ровно "SHEET_KV".
- * 
- * Предположения по настройке wrangler.toml:
- * 
- * ```toml
- * name = "catbot"
- * compatibility_date = "2025-05-31"
- *
- * main = "src/worker.js"
- *
- * [[kv_namespaces]]
- * binding    = "SHEET_KV"               # <- строго "SHEET_KV"
- * id         = "<PRODUCTION_KV_ID>"
- * preview_id = "<PREVIEW_KV_ID>"
- *
- * [triggers]
- * crons = ["*/5 * * * *"]
- * ```
- *
- * И в Variables and Secrets (или через `wrangler secret put`):
- * TELEGRAM_BOT_TOKEN, GOOGLE_SHEETS_API_KEY, GOOGLE_SHEETS_ID
+ * Защищаемся от отсутствия binding "SHEET_KV" в scheduled.
  */
 
 /** ----- Константы и RAM-кэш ----- */
-const RANGE = encodeURIComponent('Sheet1!A:C'); // Диапазон: колонки A–C листа "Sheet1"
-const RAM_TTL = 5 * 60 * 1000;                   // 5 минут
-let ramCache = null;                             // { data: Map<trigger, [ответы]>, exp: timestamp }
+const RANGE = encodeURIComponent('Sheet1!A:C');
+const RAM_TTL = 5 * 60 * 1000;
+let ramCache = null;
 
 /**
  * Выбирает случайный элемент из массива.
@@ -43,22 +20,21 @@ function pickRandom(arr) {
 
 /**
  * Подтягивает данные из Google Sheets, кэширует в RAM и KV, возвращает Map<trigger, [ответы]>.
- * Триггер берётся из колонки B (index 1), ответ — из колонки C (index 2).
  * @param {{ SHEET_KV: KVNamespace, GOOGLE_SHEETS_API_KEY: string, GOOGLE_SHEETS_ID: string }} env 
  * @returns {Promise<Map<string,string[]>>}
  */
 async function fetchSheet(env) {
-  // Убедимся, что KV-привязка существует
+  // Проверка существования привязки
   if (!env.SHEET_KV) {
     throw new Error('Binding "SHEET_KV" is not defined. Check wrangler.toml or Dashboard.');
   }
 
-  // 1) Проверяем RAM-слой
+  // 1) RAM-слой
   if (ramCache && Date.now() < ramCache.exp) {
     return ramCache.data;
   }
 
-  // 2) Проверяем KV-слой (preview_id для wrangler dev, id для продакшна)
+  // 2) KV-слой
   const kvKey = 'sheet-v1';
   let kvRaw;
   try {
@@ -66,16 +42,15 @@ async function fetchSheet(env) {
   } catch (e) {
     throw new Error('Error accessing KV: ' + e.message);
   }
-
   if (kvRaw) {
-    const map = new Map(kvRaw); // kvRaw — сериализованный [[trigger, [ответы]], ...]
+    const map = new Map(kvRaw);
     ramCache = { data: map, exp: Date.now() + RAM_TTL };
     return map;
   }
 
   // 3) Запрос к Google Sheets API
   if (!env.GOOGLE_SHEETS_ID || !env.GOOGLE_SHEETS_API_KEY) {
-    throw new Error('Environment variables GOOGLE_SHEETS_ID or GOOGLE_SHEETS_API_KEY are missing.');
+    throw new Error('ENV variables GOOGLE_SHEETS_ID or GOOGLE_SHEETS_API_KEY are missing.');
   }
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${env.GOOGLE_SHEETS_ID}` +
               `/values/${RANGE}?key=${env.GOOGLE_SHEETS_API_KEY}`;
@@ -99,7 +74,7 @@ async function fetchSheet(env) {
     map.get(rawTrigger).push(rawResponse);
   }
 
-  // 5) Сохраняем в KV (TTL в секундах)
+  // 5) Сохраняем в KV
   const serialised = Array.from(map.entries());
   try {
     await env.SHEET_KV.put(kvKey, JSON.stringify(serialised), { expirationTtl: RAM_TTL / 1000 });
@@ -109,7 +84,7 @@ async function fetchSheet(env) {
 
   // 6) Обновляем RAM
   ramCache = { data: map, exp: Date.now() + RAM_TTL };
-  console.log(`Sheet refreshed: ${map.size} distinct triggers`);
+  console.log(`Sheet refreshed: ${map.size} triggers`);
   return map;
 }
 
@@ -122,7 +97,7 @@ async function fetchSheet(env) {
  */
 async function sendTelegram(env, chatId, text, replyTo) {
   if (!env.TELEGRAM_BOT_TOKEN) {
-    console.error('Environment variable TELEGRAM_BOT_TOKEN is missing.');
+    console.error('Missing TELEGRAM_BOT_TOKEN.');
     return;
   }
   const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
@@ -150,16 +125,13 @@ addEventListener('fetch', (event) => {
  * @returns {Promise<Response>}
  */
 async function handleRequest(request, event) {
-  // Health-check на GET-запросы
   if (request.method === 'GET') {
     return new Response('🐈‍⬛ CatBot online', { status: 200 });
   }
 
-  // Обрабатываем POST от Telegram
   try {
     const update = await request.json().catch(() => null);
     if (!update || !update.message || !update.message.text) {
-      // Если нет поля message.text, просто возвращаем OK
       return new Response(JSON.stringify({ ok: true }), {
         headers: { 'Content-Type': 'application/json' },
       });
@@ -169,8 +141,13 @@ async function handleRequest(request, event) {
     const textIn = (update.message.text || '').trim();
     const key = textIn.toLowerCase();
 
-    // Команда для перезагрузки данных из Google Sheets
     if (key === '/reload') {
+      if (!event.env.SHEET_KV) {
+        await sendTelegram(event.env, chatId, 'Binding "SHEET_KV" не найден. Проверьте привязку KV.');
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
       try {
         await event.env.SHEET_KV.delete('sheet-v1');
         ramCache = null;
@@ -185,7 +162,6 @@ async function handleRequest(request, event) {
       });
     }
 
-    // Получаем карту триггер→массив ответов
     let map;
     try {
       map = await fetchSheet(event.env);
@@ -197,7 +173,6 @@ async function handleRequest(request, event) {
       });
     }
 
-    // Ищем ответы по ключу
     const answers = map.get(key);
     if (answers && answers.length > 0) {
       const randomAnswer = pickRandom(answers);
@@ -206,14 +181,13 @@ async function handleRequest(request, event) {
       await sendTelegram(
         event.env,
         chatId,
-        'Не знаю такого триггера 🙀 Напишите /reload, если вы только что добавили новый триггер.'
+        'Не знаю такого триггера 🙀 Напишите /reload, если вы только что добавили его.'
       );
     }
   } catch (err) {
     console.error('Handler error:', err);
   }
 
-  // Всегда возвращаем 200 OK с { ok: true }, чтобы Telegram не "отключил" webhook
   return new Response(JSON.stringify({ ok: true }), {
     headers: { 'Content-Type': 'application/json' },
   });
@@ -225,10 +199,13 @@ addEventListener('scheduled', (event) => {
 });
 
 /**
- * При срабатывании планировщика (раз в 5 минут) обновляем кеш данных
  * @param {{ env: any }} event 
  */
 async function handleScheduled(event) {
+  if (!event.env.SHEET_KV) {
+    console.error('Scheduled: Binding "SHEET_KV" is missing. Skip fetchSheet.');
+    return;
+  }
   try {
     await fetchSheet(event.env);
   } catch (err) {
