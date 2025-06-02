@@ -254,16 +254,35 @@ addEventListener("scheduled", (scheduledEvent) => { // scheduledEvent - это S
 });
 
 /**
- * @param {ScheduledEvent & { env: any }} event
+ * @param {ScheduledEvent & { env: any }} event  // Типизация здесь для ясности, JavaScript нестрого типизирован
  */
 async function handleScheduled(event) {
+  // Вывод в консоль для отладки: что вообще есть в event и event.env
+  console.log("handleScheduled called. Event keys:", Object.keys(event).join(", "));
+  if (event.env) {
+    console.log("handleScheduled: event.env keys:", Object.keys(event.env).join(", "));
+  } else {
+    console.log("handleScheduled: event.env is undefined.");
+  }
+
+  // Оригинальная проверка
   if (!event.env || !event.env.SHEET_KV) {
     console.error("Scheduled: event.env or event.env.SHEET_KV is missing!");
-    return;
+    return; // Выходим, если нет SHEET_KV
   }
+
+  // Проверим и другие необходимые для fetchSheet переменные, если они используются только в scheduled
+  if (!event.env.GOOGLE_SHEETS_API_KEY || !event.env.GOOGLE_SHEETS_ID) {
+      console.error("Scheduled: GOOGLE_SHEETS_API_KEY or GOOGLE_SHEETS_ID is missing in event.env!");
+      // В зависимости от логики, может, тоже стоит return
+  }
+
+
   try {
-    await fetchSheet(event.env); // Здесь event.env корректен
+    console.log("Scheduled: Attempting to call fetchSheet with event.env:", event.env);
+    await fetchSheet(event.env); // Здесь event.env должен быть корректным объектом с байндингами
+    console.log("Scheduled: fetchSheet completed successfully.");
   } catch (err) {
-    console.error("Scheduled refresh error:", err);
+    console.error("Scheduled refresh error:", err.message, err.stack);
   }
 }
