@@ -1,5 +1,5 @@
 name = "catbot"
-compatibility_date = "2025-05-30"
+compatibility_date = "2025-05-28"
 
 main = "src/worker.js"
 
